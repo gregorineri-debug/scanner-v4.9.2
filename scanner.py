@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import streamlit as st
 from datetime import datetime
+import pytz
 import statistics
 
 st.set_page_config(page_title="Scanner V4.9 PRO", layout="wide")
@@ -12,7 +13,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 @st.cache_data(ttl=600)
 def get_matches():
-    url = "https://api.sofascore.com/api/v1/sport/football/scheduled-events/" + datetime.today().strftime("%Y-%m-%d")
+    url = "https://api.sofascore.com/api/v1/sport/football/scheduled-events/" + datetime.now(pytz.timezone("America/Sao_Paulo")).strftime("%Y-%m-%d")
     data = requests.get(url, headers=HEADERS).json()
     matches = []
 
