@@ -12,7 +12,7 @@ st.title("🌍 Scanner Automático V5 PRO (MODO DECISÃO)")
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # =============================
-# SELETOR DE DATA (NOVO)
+# SELETOR DE DATA
 # =============================
 data_input = st.date_input(
     "📅 Selecione a data dos jogos:",
@@ -24,7 +24,7 @@ data_alvo = data_input.strftime('%Y-%m-%d')
 st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
 
 # =============================
-# BUSCAR JOGOS DO DIA (AJUSTADO)
+# BUSCAR JOGOS
 # =============================
 @st.cache_data(ttl=600)
 def get_matches(data_alvo):
@@ -61,7 +61,7 @@ def get_matches(data_alvo):
         return []
 
 # =============================
-# DADOS DOS TIMES
+# DADOS DOS TIMES (REFINADO)
 # =============================
 @st.cache_data(ttl=600)
 def get_last_matches(team_id):
@@ -70,39 +70,48 @@ def get_last_matches(team_id):
         data = requests.get(url, headers=HEADERS).json()
         events = data.get("events", [])
 
-        wins = 0
+        weighted_wins = 0
+        total_weight = 0
+
         goals_scored = []
         goals_conceded = []
-        home_wins = 0
-        away_wins = 0
-        home_games = 0
-        away_games = 0
 
-        for e in events:
+        home_perf = []
+        away_perf = []
+
+        for i, e in enumerate(events):
+            weight = 1 - (i * 0.07)
+            total_weight += weight
+
             is_home = e["homeTeam"]["id"] == team_id
             hs = e["homeScore"]["current"]
             as_ = e["awayScore"]["current"]
 
             if is_home:
-                home_games += 1
                 goals_scored.append(hs)
                 goals_conceded.append(as_)
+                home_perf.append(1 if hs > as_ else 0)
+
                 if hs > as_:
-                    wins += 1
-                    home_wins += 1
+                    weighted_wins += weight
             else:
-                away_games += 1
                 goals_scored.append(as_)
                 goals_conceded.append(hs)
-                if as_ > hs:
-                    wins += 1
-                    away_wins += 1
+                away_perf.append(1 if as_ > hs else 0)
 
-        win_rate = wins / max(1, len(events))
+                if as_ > hs:
+                    weighted_wins += weight
+
+        win_rate = weighted_wins / max(1, total_weight)
+
         avg_scored = sum(goals_scored) / max(1, len(goals_scored))
         avg_conceded = sum(goals_conceded) / max(1, len(goals_conceded))
-        home_win_rate = home_wins / max(1, home_games)
-        away_win_rate = away_wins / max(1, away_games)
+
+        home_win_rate = sum(home_perf) / max(1, len(home_perf))
+        away_win_rate = sum(away_perf) / max(1, len(away_perf))
+
+        recent_games = home_perf + away_perf
+        recent_form = sum(recent_games[:3]) / max(1, len(recent_games[:3]))
 
         consistency = 1 / (1 + (statistics.pvariance(goals_scored) + statistics.pvariance(goals_conceded)))
 
@@ -112,6 +121,7 @@ def get_last_matches(team_id):
             "avg_conceded": avg_conceded,
             "home_win_rate": home_win_rate,
             "away_win_rate": away_win_rate,
+            "recent_form": recent_form,
             "consistency": consistency
         }
 
@@ -122,25 +132,47 @@ def get_last_matches(team_id):
             "avg_conceded": 1,
             "home_win_rate": 0.5,
             "away_win_rate": 0.5,
+            "recent_form": 0.5,
             "consistency": 0.5
         }
 
 # =============================
-# SCORE
+# SCORE REFINADO
 # =============================
 def calculate_score(home, away):
     forma = home["win_rate"] - away["win_rate"]
     ataque = home["avg_scored"] - away["avg_scored"]
     defesa = away["avg_conceded"] - home["avg_conceded"]
     casa_fora = home["home_win_rate"] - away["away_win_rate"]
+    momento = home["recent_form"] - away["recent_form"]
     consistencia = home["consistency"] - away["consistency"]
 
-    score = (forma * 30 + ataque * 20 + defesa * 20 + casa_fora * 20 + consistencia * 10)
+    score = (
+        forma * 25 +
+        ataque * 15 +
+        defesa * 15 +
+        casa_fora * 20 +
+        momento * 15 +
+        consistencia * 10
+    )
+
     score = max(0, min(100, 50 + score))
     return score
 
 def score_to_probability(score):
     return round(score / 100, 2)
+
+# =============================
+# FILTRO V5 (NOVO)
+# =============================
+def is_valid_bet(score, home, away):
+    if 45 <= score <= 55:
+        return False
+
+    if home["consistency"] < 0.3 or away["consistency"] < 0.3:
+        return False
+
+    return True
 
 # =============================
 # DECISÃO
@@ -172,6 +204,10 @@ for m in matches:
     away = get_last_matches(m["away_id"])
 
     score = calculate_score(home, away)
+
+    if not is_valid_bet(score, home, away):
+        continue
+
     prob = score_to_probability(score)
     prediction = get_prediction(score)
     strength = get_strength(score)
@@ -191,7 +227,7 @@ for m in matches:
 if results:
     df = pd.DataFrame(results)
 
-    st.subheader("📊 Todos os Jogos")
+    st.subheader("📊 Todos os Jogos (Filtrados)")
     st.dataframe(df, use_container_width=True)
 
     st.subheader("💰 Apostas Recomendadas")
@@ -201,4 +237,4 @@ if results:
     )
 
 else:
-    st.warning("Nenhum jogo encontrado.")
+    st.warning("Nenhum jogo válido encontrado (filtro V5).")
