@@ -4,115 +4,124 @@ import streamlit as st
 from datetime import date
 import statistics
 
-st.set_page_config(page_title="Scanner V6.5 PRO", layout="wide")
+st.set_page_config(page_title="Scanner V6.5 Stable", layout="wide")
 
-st.title("🌍 Scanner Automático V6.5 PRO (ELITE MODE)")
+st.title("🌍 Scanner Automático V6.5 (ESTÁVEL)")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-# =============================
-# DATA
-# =============================
-data_input = st.date_input("📅 Data dos jogos:", value=date.today())
+data_input = st.date_input("📅 Data:", value=date.today())
 data_alvo = data_input.strftime('%Y-%m-%d')
-
-st.write(f"🔎 Jogos do dia: **{data_alvo}**")
 
 # =============================
 # MATCHES
 # =============================
 @st.cache_data(ttl=600)
 def get_matches(data_alvo):
-    url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
-    data = requests.get(url, headers=HEADERS).json()
+    try:
+        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
+        data = requests.get(url, headers=HEADERS).json()
 
-    matches = []
+        matches = []
 
-    for event in data.get("events", []):
-        matches.append({
-            "home_id": event["homeTeam"]["id"],
-            "away_id": event["awayTeam"]["id"],
-            "home": event["homeTeam"]["name"],
-            "away": event["awayTeam"]["name"],
-            "tournament": event["tournament"]["name"]
-        })
+        for event in data.get("events", []):
+            matches.append({
+                "home_id": event["homeTeam"]["id"],
+                "away_id": event["awayTeam"]["id"],
+                "home": event["homeTeam"]["name"],
+                "away": event["awayTeam"]["name"],
+            })
 
-    return matches
+        return matches
+
+    except:
+        return []
 
 # =============================
 # FORMA
 # =============================
 @st.cache_data(ttl=600)
 def get_form(team_id):
-    url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/10"
-    data = requests.get(url, headers=HEADERS).json()
-    events = data.get("events", [])
+    try:
+        url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/10"
+        data = requests.get(url, headers=HEADERS).json()
 
-    wins = 0
-    scored = []
-    conceded = []
+        events = data.get("events", [])
 
-    for e in events:
-        hs = e["homeScore"]["current"]
-        as_ = e["awayScore"]["current"]
+        wins = 0
+        goals = []
 
-        if hs > as_:
-            wins += 1
+        for e in events:
+            hs = e["homeScore"]["current"]
+            as_ = e["awayScore"]["current"]
 
-        scored.append(hs)
-        conceded.append(as_)
+            goals.append(hs)
 
-    return {
-        "win_rate": wins / max(1, len(events)),
-        "avg_scored": sum(scored) / max(1, len(scored)),
-        "avg_conceded": sum(conceded) / max(1, len(conceded)),
-        "consistency": 1 / (1 + statistics.pvariance(scored)) if len(scored) > 1 else 0.5
-    }
+            if hs > as_:
+                wins += 1
+
+        return {
+            "win_rate": wins / max(1, len(events)),
+            "avg_goals": sum(goals) / max(1, len(goals)),
+            "consistency": 1 / (1 + statistics.pvariance(goals)) if len(goals) > 1 else 0.5
+        }
+
+    except:
+        return {
+            "win_rate": 0.5,
+            "avg_goals": 1.0,
+            "consistency": 0.5
+        }
 
 # =============================
-# TABELA / POSIÇÃO
+# POSIÇÃO (SAFE)
 # =============================
-@st.cache_data(ttl=600)
 def get_position(team_id):
     try:
         url = f"https://api.sofascore.com/api/v1/team/{team_id}/standings/total"
         data = requests.get(url, headers=HEADERS).json()
 
         standings = data.get("standings", [])
+
         if standings:
-            table = standings[0].get("rows", [])
-            for team in table:
-                if team["team"]["id"] == team_id:
-                    return team["position"]
+            rows = standings[0].get("rows", [])
+
+            for r in rows:
+                if r["team"]["id"] == team_id:
+                    return r.get("position", 10)
+
     except:
         pass
 
     return 10
 
 # =============================
-# RATING JOGADORES
+# RATING (SAFE)
 # =============================
-@st.cache_data(ttl=600)
 def get_player_rating(team_id):
     try:
         url = f"https://api.sofascore.com/api/v1/team/{team_id}/players"
         data = requests.get(url, headers=HEADERS).json()
 
+        players = data.get("players", [])
+
         ratings = []
 
-        for p in data.get("players", []):
-            r = p.get("statistics", {}).get("rating")
-            if r:
+        for p in players:
+            stats = p.get("statistics", {})
+            r = stats.get("rating")
+
+            if isinstance(r, (int, float)):
                 ratings.append(r)
 
         return sum(ratings) / len(ratings) if ratings else 0.5
+
     except:
         return 0.5
 
 # =============================
 # DESFALQUES
 # =============================
-@st.cache_data(ttl=600)
 def get_injuries(team_id):
     try:
         url = f"https://api.sofascore.com/api/v1/team/{team_id}/squad"
@@ -120,71 +129,59 @@ def get_injuries(team_id):
 
         players = data.get("players", [])
 
-        injured = sum(1 for p in players if p.get("injury", {}).get("active"))
+        injured = sum(
+            1 for p in players
+            if p.get("injury", {}).get("active")
+        )
 
         return injured / max(1, len(players))
+
     except:
         return 0.0
 
 # =============================
-# FORÇA ELO SIMPLIFICADO
+# FORÇA (ELO SIMPLES)
 # =============================
-def team_strength(position):
-    if position <= 3:
+def elo_from_position(pos):
+    if pos <= 3:
         return 1.2
-    elif position <= 6:
+    elif pos <= 6:
         return 1.1
-    elif position <= 12:
+    elif pos <= 12:
         return 1.0
     else:
         return 0.9
 
 # =============================
-# ODDS INPUT (SIMULADO)
-# =============================
-def get_odds():
-    # você pode trocar por API depois
-    return 2.00, 3.20  # casa, empate/visitante
-
-# =============================
 # SCORE
 # =============================
-def calculate_score(home, away):
+def score_model(home, away):
     score = (
         (home["win_rate"] - away["win_rate"]) * 20 +
-        (home["avg_scored"] - away["avg_scored"]) * 10 +
-        (away["avg_conceded"] - home["avg_conceded"]) * 10 +
+        (home["avg_goals"] - away["avg_goals"]) * 10 +
         (home["consistency"] - away["consistency"]) * 10 +
-        (home["player_rating"] - away["player_rating"]) * 15 +
+        (home["rating"] - away["rating"]) * 10 +
         (away["injuries"] - home["injuries"]) * 10 +
-        (home["elo"] - away["elo"]) * 15
+        (home["elo"] - away["elo"]) * 10
     )
 
-    score = max(0, min(100, 50 + score))
-    return score
+    return max(0, min(100, 50 + score))
 
 # =============================
 # PROBABILIDADE
 # =============================
-def probability(score):
+def prob(score):
     return score / 100
 
 # =============================
-# EXPECTED VALUE (EV)
+# PREVISÃO
 # =============================
-def expected_value(prob, odds):
-    return (prob * odds) - 1
-
-# =============================
-# RESULTADO
-# =============================
-def prediction(score):
+def pick(score):
     if score >= 60:
-        return "Casa vence"
+        return "Casa"
     elif score <= 40:
-        return "Visitante vence"
-    else:
-        return "Sem aposta"
+        return "Visitante"
+    return "Sem valor"
 
 # =============================
 # EXECUÇÃO
@@ -200,35 +197,26 @@ for m in matches:
 
     home = {
         **get_form(m["home_id"]),
-        "player_rating": get_player_rating(m["home_id"]),
+        "rating": get_player_rating(m["home_id"]),
         "injuries": get_injuries(m["home_id"]),
-        "elo": team_strength(home_pos)
+        "elo": elo_from_position(home_pos)
     }
 
     away = {
         **get_form(m["away_id"]),
-        "player_rating": get_player_rating(m["away_id"]),
+        "rating": get_player_rating(m["away_id"]),
         "injuries": get_injuries(m["away_id"]),
-        "elo": team_strength(away_pos)
+        "elo": elo_from_position(away_pos)
     }
 
-    score = calculate_score(home, away)
-    prob = probability(score)
-
-    home_odds, away_odds = get_odds()
-
-    ev_home = expected_value(prob, home_odds)
-    ev_away = expected_value(1 - prob, away_odds)
+    score = score_model(home, away)
+    p = prob(score)
 
     results.append({
         "Jogo": f"{m['home']} x {m['away']}",
-        "Score": round(score, 2),
-        "Prob (%)": round(prob * 100, 1),
-        "Odds Casa": home_odds,
-        "EV Casa": round(ev_home, 2),
-        "Odds Visitante": away_odds,
-        "EV Visitante": round(ev_away, 2),
-        "Pick": prediction(score)
+        "Score": round(score, 1),
+        "Probabilidade": round(p * 100, 1),
+        "Pick": pick(score)
     })
 
 # =============================
@@ -236,14 +224,6 @@ for m in matches:
 # =============================
 if results:
     df = pd.DataFrame(results)
-
-    st.subheader("📊 Jogos")
     st.dataframe(df, use_container_width=True)
-
-    st.subheader("💰 Melhores oportunidades (EV > 0)")
-    st.dataframe(
-        df[(df["EV Casa"] > 0) | (df["EV Visitante"] > 0)],
-        use_container_width=True
-    )
 else:
     st.warning("Nenhum jogo encontrado.")
