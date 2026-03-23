@@ -14,21 +14,33 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 @st.cache_data(ttl=600)
 def get_matches():
     try:
-        today = datetime.now(pytz.timezone("America/Sao_Paulo")).strftime("%Y-%m-%d")
-        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{today}"
+        tz = pytz.timezone("America/Sao_Paulo")
 
+        now = datetime.now(tz)
+        start_day = tz.localize(datetime(now.year, now.month, now.day, 0, 0, 0))
+        end_day = tz.localize(datetime(now.year, now.month, now.day, 23, 59, 59))
+
+        start_ts = int(start_day.timestamp())
+        end_ts = int(end_day.timestamp())
+
+        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{now.strftime('%Y-%m-%d')}"
         data = requests.get(url, headers=HEADERS).json()
+
         matches = []
 
         for event in data.get("events", []):
-            matches.append({
-                "home_id": event["homeTeam"]["id"],
-                "away_id": event["awayTeam"]["id"],
-                "home": event["homeTeam"]["name"],
-                "away": event["awayTeam"]["name"],
-                "tournament": event["tournament"]["name"],
-                "country": event["tournament"]["category"]["name"]
-            })
+            event_ts = event.get("startTimestamp", 0)
+
+            # 🔥 FILTRO REAL DO DIA
+            if start_ts <= event_ts <= end_ts:
+                matches.append({
+                    "home_id": event["homeTeam"]["id"],
+                    "away_id": event["awayTeam"]["id"],
+                    "home": event["homeTeam"]["name"],
+                    "away": event["awayTeam"]["name"],
+                    "tournament": event["tournament"]["name"],
+                    "country": event["tournament"]["category"]["name"]
+                })
 
         return matches
 
