@@ -12,7 +12,6 @@ st.title("🌍 Scanner Automático V4.9 PRO (MODO LUCRO)")
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 @st.cache_data(ttl=600)
-@st.cache_data(ttl=600)
 def get_matches():
     try:
         today = datetime.utcnow().strftime("%Y-%m-%d")
