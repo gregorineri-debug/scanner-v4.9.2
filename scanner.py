@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, date
 import pytz
 import statistics
 
@@ -12,21 +12,32 @@ st.title("🌍 Scanner Automático V5 PRO (MODO DECISÃO)")
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # =============================
-# BUSCAR JOGOS DO DIA (CORRIGIDO)
+# SELETOR DE DATA (NOVO)
+# =============================
+data_input = st.date_input(
+    "📅 Selecione a data dos jogos:",
+    value=date.today()
+)
+
+data_alvo = data_input.strftime('%Y-%m-%d')
+
+st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
+
+# =============================
+# BUSCAR JOGOS DO DIA (AJUSTADO)
 # =============================
 @st.cache_data(ttl=600)
-def get_matches():
+def get_matches(data_alvo):
     try:
         tz = pytz.timezone("America/Sao_Paulo")
 
-        now = datetime.now(tz)
-        start_day = tz.localize(datetime(now.year, now.month, now.day, 0, 0, 0))
-        end_day = tz.localize(datetime(now.year, now.month, now.day, 23, 59, 59))
+        start_day = tz.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
+        end_day = tz.localize(datetime.strptime(data_alvo + " 23:59:59", "%Y-%m-%d %H:%M:%S"))
 
         start_ts = int(start_day.timestamp())
         end_ts = int(end_day.timestamp())
 
-        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{now.strftime('%Y-%m-%d')}"
+        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
         data = requests.get(url, headers=HEADERS).json()
 
         matches = []
@@ -153,7 +164,7 @@ def get_strength(score):
 # =============================
 # PROCESSAMENTO
 # =============================
-matches = get_matches()
+matches = get_matches(data_alvo)
 results = []
 
 for m in matches:
