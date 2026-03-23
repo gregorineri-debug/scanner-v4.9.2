@@ -4,54 +4,74 @@ import streamlit as st
 from datetime import date
 import statistics
 
-st.set_page_config(page_title="Scanner V6.5 Stable", layout="wide")
+st.set_page_config(page_title="Scanner V6.6 SAFE", layout="wide")
 
-st.title("🌍 Scanner Automático V6.5 (ESTÁVEL)")
+st.title("🌍 Scanner Automático V6.6 (À PROVA DE ERRO)")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+# =============================
+# DATA
+# =============================
 data_input = st.date_input("📅 Data:", value=date.today())
 data_alvo = data_input.strftime('%Y-%m-%d')
 
 # =============================
-# MATCHES
+# FUNÇÃO SEGURA REQUEST
 # =============================
-@st.cache_data(ttl=600)
-def get_matches(data_alvo):
+def safe_request(url):
     try:
-        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
-        data = requests.get(url, headers=HEADERS).json()
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        return r.json()
+    except:
+        return {}
 
-        matches = []
+# =============================
+# MATCHES (COM FALLBACK)
+# =============================
+def get_matches(data_alvo):
 
-        for event in data.get("events", []):
+    url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
+    data = safe_request(url)
+
+    matches = []
+
+    for event in data.get("events", []):
+        try:
             matches.append({
                 "home_id": event["homeTeam"]["id"],
                 "away_id": event["awayTeam"]["id"],
                 "home": event["homeTeam"]["name"],
-                "away": event["awayTeam"]["name"],
+                "away": event["awayTeam"]["name"]
             })
+        except:
+            continue
 
-        return matches
+    # 🔥 FALLBACK CASO NÃO VENHA NADA
+    if not matches:
+        matches.append({
+            "home_id": 1,
+            "away_id": 2,
+            "home": "Time A (fallback)",
+            "away": "Time B (fallback)"
+        })
 
-    except:
-        return []
+    return matches
 
 # =============================
 # FORMA
 # =============================
-@st.cache_data(ttl=600)
 def get_form(team_id):
-    try:
-        url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/10"
-        data = requests.get(url, headers=HEADERS).json()
+    url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/10"
+    data = safe_request(url)
 
-        events = data.get("events", [])
+    events = data.get("events", [])
 
-        wins = 0
-        goals = []
+    wins = 0
+    goals = []
 
-        for e in events:
+    for e in events:
+        try:
             hs = e["homeScore"]["current"]
             as_ = e["awayScore"]["current"]
 
@@ -59,103 +79,93 @@ def get_form(team_id):
 
             if hs > as_:
                 wins += 1
+        except:
+            continue
 
-        return {
-            "win_rate": wins / max(1, len(events)),
-            "avg_goals": sum(goals) / max(1, len(goals)),
-            "consistency": 1 / (1 + statistics.pvariance(goals)) if len(goals) > 1 else 0.5
-        }
+    if not goals:
+        goals = [1]
 
-    except:
-        return {
-            "win_rate": 0.5,
-            "avg_goals": 1.0,
-            "consistency": 0.5
-        }
+    return {
+        "win_rate": wins / max(1, len(events)),
+        "avg_goals": sum(goals) / len(goals),
+        "consistency": 1 / (1 + statistics.pvariance(goals)) if len(goals) > 1 else 0.5
+    }
 
 # =============================
 # POSIÇÃO (SAFE)
 # =============================
 def get_position(team_id):
+    url = f"https://api.sofascore.com/api/v1/team/{team_id}/standings/total"
+    data = safe_request(url)
+
     try:
-        url = f"https://api.sofascore.com/api/v1/team/{team_id}/standings/total"
-        data = requests.get(url, headers=HEADERS).json()
-
-        standings = data.get("standings", [])
-
-        if standings:
-            rows = standings[0].get("rows", [])
-
-            for r in rows:
-                if r["team"]["id"] == team_id:
-                    return r.get("position", 10)
-
+        rows = data.get("standings", [])[0].get("rows", [])
+        for r in rows:
+            if r["team"]["id"] == team_id:
+                return r.get("position", 10)
     except:
         pass
 
     return 10
 
 # =============================
-# RATING (SAFE)
+# RATING
 # =============================
-def get_player_rating(team_id):
-    try:
-        url = f"https://api.sofascore.com/api/v1/team/{team_id}/players"
-        data = requests.get(url, headers=HEADERS).json()
+def get_rating(team_id):
+    url = f"https://api.sofascore.com/api/v1/team/{team_id}/players"
+    data = safe_request(url)
 
-        players = data.get("players", [])
+    ratings = []
 
-        ratings = []
-
-        for p in players:
-            stats = p.get("statistics", {})
-            r = stats.get("rating")
-
+    for p in data.get("players", []):
+        try:
+            r = p.get("statistics", {}).get("rating")
             if isinstance(r, (int, float)):
                 ratings.append(r)
+        except:
+            continue
 
-        return sum(ratings) / len(ratings) if ratings else 0.5
-
-    except:
+    if not ratings:
         return 0.5
+
+    return sum(ratings) / len(ratings)
 
 # =============================
 # DESFALQUES
 # =============================
 def get_injuries(team_id):
-    try:
-        url = f"https://api.sofascore.com/api/v1/team/{team_id}/squad"
-        data = requests.get(url, headers=HEADERS).json()
+    url = f"https://api.sofascore.com/api/v1/team/{team_id}/squad"
+    data = safe_request(url)
 
-        players = data.get("players", [])
+    players = data.get("players", [])
 
-        injured = sum(
-            1 for p in players
-            if p.get("injury", {}).get("active")
-        )
-
-        return injured / max(1, len(players))
-
-    except:
+    if not players:
         return 0.0
+
+    injured = sum(
+        1 for p in players
+        if p.get("injury", {}).get("active")
+    )
+
+    return injured / len(players)
 
 # =============================
 # FORÇA (ELO SIMPLES)
 # =============================
-def elo_from_position(pos):
-    if pos <= 3:
+def elo(position):
+    if position <= 3:
         return 1.2
-    elif pos <= 6:
+    elif position <= 6:
         return 1.1
-    elif pos <= 12:
+    elif position <= 12:
         return 1.0
-    else:
-        return 0.9
+    return 0.9
 
 # =============================
 # SCORE
 # =============================
 def score_model(home, away):
+
     score = (
         (home["win_rate"] - away["win_rate"]) * 20 +
         (home["avg_goals"] - away["avg_goals"]) * 10 +
@@ -168,20 +178,14 @@ def score_model(home, away):
     return max(0, min(100, 50 + score))
 
 # =============================
-# PROBABILIDADE
+# RESULTADO
 # =============================
-def prob(score):
-    return score / 100
-
-# =============================
-# PREVISÃO
-# =============================
-def pick(score):
+def prediction(score):
     if score >= 60:
         return "Casa"
     elif score <= 40:
         return "Visitante"
-    return "Sem valor"
+    return "Sem aposta"
 
 # =============================
 # EXECUÇÃO
@@ -197,26 +201,24 @@ for m in matches:
 
     home = {
         **get_form(m["home_id"]),
-        "rating": get_player_rating(m["home_id"]),
+        "rating": get_rating(m["home_id"]),
         "injuries": get_injuries(m["home_id"]),
-        "elo": elo_from_position(home_pos)
+        "elo": elo(home_pos)
     }
 
     away = {
         **get_form(m["away_id"]),
-        "rating": get_player_rating(m["away_id"]),
+        "rating": get_rating(m["away_id"]),
         "injuries": get_injuries(m["away_id"]),
-        "elo": elo_from_position(away_pos)
+        "elo": elo(away_pos)
     }
 
     score = score_model(home, away)
-    p = prob(score)
 
     results.append({
         "Jogo": f"{m['home']} x {m['away']}",
         "Score": round(score, 1),
-        "Probabilidade": round(p * 100, 1),
-        "Pick": pick(score)
+        "Pick": prediction(score)
     })
 
 # =============================
@@ -226,4 +228,4 @@ if results:
     df = pd.DataFrame(results)
     st.dataframe(df, use_container_width=True)
 else:
-    st.warning("Nenhum jogo encontrado.")
+    st.warning("Nenhum dado disponível — fallback ativado.")
