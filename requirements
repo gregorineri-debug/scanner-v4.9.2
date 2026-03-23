@@ -1,7 +1,4 @@
 streamlit
 requests
 pandas
-pytz
-numpy
-scikit-learn
 joblib
