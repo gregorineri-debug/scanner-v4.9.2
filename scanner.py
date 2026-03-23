@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import streamlit as st
-from datetime import datetime, date
+from datetime import datetime, timedelta
 import pytz
 
 # =============================
@@ -16,12 +16,6 @@ HEADERS = {
 }
 
 # =============================
-# DATA
-# =============================
-data_input = st.date_input("📅 Selecione a data:", value=date.today())
-data_alvo = data_input.strftime('%Y-%m-%d')
-
-# =============================
 # SAFE REQUEST
 # =============================
 def safe_get(url):
@@ -31,12 +25,26 @@ def safe_get(url):
         return {}
 
 # =============================
-# JOGOS (CORRIGIDO)
+# JOGOS (CORRIGIDO - HOJE REAL)
 # =============================
 @st.cache_data(ttl=600)
-def get_matches(data_alvo):
+def get_matches():
 
-    url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
+    tz = pytz.timezone("America/Sao_Paulo")
+
+    now_local = datetime.now(tz)
+
+    start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_local = start_local + timedelta(days=1)
+
+    start_utc = start_local.astimezone(pytz.utc)
+    end_utc = end_local.astimezone(pytz.utc)
+
+    from_ts = int(start_utc.timestamp() * 1000)
+    to_ts = int(end_utc.timestamp() * 1000)
+
+    url = f"https://api.sofascore.com/api/v1/sport/football/events?from={from_ts}&to={to_ts}"
+
     data = safe_get(url)
 
     matches = []
@@ -59,7 +67,7 @@ def get_matches(data_alvo):
 # POSIÇÃO (fallback)
 # =============================
 def get_position(team_id):
-    return 8  # fallback estável
+    return 8
 
 # =============================
 # ELO
@@ -138,7 +146,7 @@ def get_h2h(home_id, away_id):
         return 0.5
 
 # =============================
-# DESFALQUES (fallback)
+# DESFALQUES
 # =============================
 def get_injuries(team_id):
     return 0.1
@@ -174,7 +182,7 @@ def get_prediction(score):
 # =============================
 # EXECUÇÃO
 # =============================
-matches = get_matches(data_alvo)
+matches = get_matches()
 
 results = []
 
@@ -224,4 +232,4 @@ if results:
     )
 
 else:
-    st.warning("Nenhum jogo encontrado — tente outra data.")
+    st.warning("Nenhum jogo encontrado — verifique a data ou API.")
