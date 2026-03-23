@@ -25,31 +25,40 @@ def safe_get(url):
         return {}
 
 # =============================
-# JOGOS (CORRIGIDO - HOJE REAL)
+# JOGOS (COM FALLBACK REAL)
 # =============================
 @st.cache_data(ttl=600)
 def get_matches():
 
     tz = pytz.timezone("America/Sao_Paulo")
 
+    # DATA LOCAL
     now_local = datetime.now(tz)
+    data_alvo = now_local.strftime("%Y-%m-%d")
 
-    start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_local = start_local + timedelta(days=1)
-
-    start_utc = start_local.astimezone(pytz.utc)
-    end_utc = end_local.astimezone(pytz.utc)
-
-    from_ts = int(start_utc.timestamp() * 1000)
-    to_ts = int(end_utc.timestamp() * 1000)
-
-    url = f"https://api.sofascore.com/api/v1/sport/football/events?from={from_ts}&to={to_ts}"
-
+    # 1. PRIMEIRA TENTATIVA (MAIS ESTÁVEL)
+    url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
     data = safe_get(url)
 
+    events = data.get("events", [])
+
+    # 2. FALLBACK SE VIER VAZIO
+    if not events:
+        start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+
+        from_ts = int(start.astimezone(pytz.utc).timestamp() * 1000)
+        to_ts = int(end.astimezone(pytz.utc).timestamp() * 1000)
+
+        url_fallback = f"https://api.sofascore.com/api/v1/sport/football/events?from={from_ts}&to={to_ts}"
+        data_fallback = safe_get(url_fallback)
+
+        events = data_fallback.get("events", [])
+
+    # 3. MONTAR LISTA
     matches = []
 
-    for e in data.get("events", []):
+    for e in events:
         try:
             matches.append({
                 "home_id": e["homeTeam"]["id"],
@@ -232,4 +241,4 @@ if results:
     )
 
 else:
-    st.warning("Nenhum jogo encontrado — verifique a data ou API.")
+    st.warning("Nenhum jogo encontrado — problema na API ou sem jogos hoje.")
