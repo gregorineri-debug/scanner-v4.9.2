@@ -138,22 +138,35 @@ def get_last_matches(team_id):
 # =============================
 # SCORE REFINADO
 # =============================
-def calculate_score(home, away):
+def calculate_score(home, away, h2h):
+
     forma = home["win_rate"] - away["win_rate"]
     ataque = home["avg_scored"] - away["avg_scored"]
     defesa = away["avg_conceded"] - home["avg_conceded"]
     momento = home["form"] - away["form"]
     consistencia = home["consistency"] - away["consistency"]
 
+    h2h_factor = (h2h - 0.5)
+
     score = (
         forma * 30 +
         ataque * 20 +
         defesa * 20 +
-        momento * 20 +
-        consistencia * 10
+        momento * 15 +
+        consistencia * 10 +
+        h2h_factor * 5
     )
-    score = 50 + (score * 50)
-    return max(0, min(100, score))
+
+    # normalização correta (sem explodir)
+    score = 50 + score
+
+    # limitar suavemente
+    if score > 100:
+        score = 100
+    if score < 0:
+        score = 0
+
+    return score
 
 def score_to_probability(score):
     return round(score / 100, 2)
