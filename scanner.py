@@ -29,33 +29,24 @@ st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
 @st.cache_data(ttl=600)
 def get_matches(data_alvo):
     try:
-        tz = pytz.timezone("America/Sao_Paulo")
-
-        start_day = tz.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
-        end_day = start_day + timedelta(days=1)
-
-        start_ts = int(start_day.timestamp())
-        end_ts = int(end_day.timestamp())
-
-        url = f"https://api.sofascore.com/api/v1/sport/football/events?from={start_ts * 1000}&to={end_ts * 1000}"
-
+        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
         data = requests.get(url, headers=HEADERS).json()
 
         matches = []
 
         for event in data.get("events", []):
             try:
-                event_ts = event.get("startTimestamp", 0)  # 👈 SEM MULTIPLICAR
+                # NÃO filtrar por timestamp (isso estava quebrando tudo)
 
-                if start_ts <= event_ts <= end_ts:
-                    matches.append({
-                        "home_id": event["homeTeam"]["id"],
-                        "away_id": event["awayTeam"]["id"],
-                        "home": event["homeTeam"]["name"],
-                        "away": event["awayTeam"]["name"],
-                        "tournament": event["tournament"]["name"],
-                        "country": event["tournament"]["category"]["name"]
-                    })
+                matches.append({
+                    "home_id": event["homeTeam"]["id"],
+                    "away_id": event["awayTeam"]["id"],
+                    "home": event["homeTeam"]["name"],
+                    "away": event["awayTeam"]["name"],
+                    "tournament": event["tournament"]["name"],
+                    "country": event["tournament"]["category"]["name"]
+                })
+
             except:
                 continue
 
