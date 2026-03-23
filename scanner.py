@@ -4,9 +4,9 @@ import streamlit as st
 from datetime import date
 import statistics
 
-st.set_page_config(page_title="Scanner PRO Estável", layout="wide")
+st.set_page_config(page_title="Scanner PRO Global", layout="wide")
 
-st.title("🌍 Scanner Automático PRO (Estável + API-Football)")
+st.title("🌍 Scanner Global de Jogos (Estável)")
 
 API_KEY = "SUA_API_KEY"
 
@@ -31,29 +31,55 @@ def safe_request(url):
         return {}
 
 # =============================
-# JOGOS
+# COLETA GLOBAL DE JOGOS
 # =============================
 def get_matches():
-    url = f"https://v3.football.api-sports.io/fixtures?date={data_alvo}"
-    data = safe_request(url)
 
-    matches = []
+    leagues = [
+        39,  # Premier League
+        140, # La Liga
+        78,  # Bundesliga
+        135, # Serie A
+        61,  # Ligue 1
+        71,  # Brasileirão
+        128, # MLS
+        179, # Eredivisie
+    ]
 
-    for item in data.get("response", []):
+    all_matches = []
+
+    for league in leagues:
         try:
-            matches.append({
-                "home": item["teams"]["home"]["name"],
-                "away": item["teams"]["away"]["name"],
-                "home_id": item["teams"]["home"]["id"],
-                "away_id": item["teams"]["away"]["id"]
-            })
+            url = f"https://v3.football.api-sports.io/fixtures?date={data_alvo}&league={league}&season=2024"
+            data = safe_request(url)
+
+            for item in data.get("response", []):
+                try:
+                    all_matches.append({
+                        "home": item["teams"]["home"]["name"],
+                        "away": item["teams"]["away"]["name"],
+                        "home_id": item["teams"]["home"]["id"],
+                        "away_id": item["teams"]["away"]["id"]
+                    })
+                except:
+                    continue
+
         except:
             continue
 
-    return matches
+    # Fallback se não vier nada
+    if not all_matches:
+        st.warning("⚠️ Nenhum jogo encontrado na API — ativando fallback")
+
+        all_matches = [
+            {"home": "Time A", "away": "Time B", "home_id": 1, "away_id": 2},
+            {"home": "Time C", "away": "Time D", "home_id": 3, "away_id": 4},
+        ]
+
+    return all_matches
 
 # =============================
-# FORMA (últimos jogos)
+# FORMA
 # =============================
 def get_form(team_id):
     url = f"https://v3.football.api-sports.io/fixtures?team={team_id}&last=5"
@@ -82,7 +108,7 @@ def get_form(team_id):
     }
 
 # =============================
-# POSIÇÃO NA TABELA
+# POSIÇÃO
 # =============================
 def get_position(team_id):
     try:
@@ -94,32 +120,13 @@ def get_position(team_id):
                 for team in group:
                     if team["team"]["id"] == team_id:
                         return team.get("rank", 10)
-
     except:
         pass
 
     return 10
 
 # =============================
-# RATING (simplificado)
-# =============================
-def get_rating(team_id):
-    try:
-        return 0.6  # API não fornece rating direto consistente
-    except:
-        return 0.5
-
-# =============================
-# DESFALQUES
-# =============================
-def get_injuries(team_id):
-    try:
-        return 0.1  # simplificado (API varia muito)
-    except:
-        return 0.0
-
-# =============================
-# FORÇA (ELO SIMPLES)
+# ELO SIMPLES
 # =============================
 def elo(position):
     if position <= 3:
@@ -132,7 +139,13 @@ def elo(position):
         return 0.9
 
 # =============================
-# SCORE
+# DESFALQUES (simplificado)
+# =============================
+def get_injuries(team_id):
+    return 0.1
+
+# =============================
+# SCORE FINAL
 # =============================
 def calculate_score(home, away):
 
@@ -160,15 +173,6 @@ def prediction(score):
 # EXECUÇÃO
 # =============================
 matches = get_matches()
-
-# 🔥 FALLBACK SE NÃO TIVER JOGOS
-if not matches:
-    st.warning("⚠️ Nenhum jogo encontrado — usando fallback")
-
-    matches = [
-        {"home": "Time A", "away": "Time B", "home_id": 1, "away_id": 2},
-        {"home": "Time C", "away": "Time D", "home_id": 3, "away_id": 4}
-    ]
 
 results = []
 
