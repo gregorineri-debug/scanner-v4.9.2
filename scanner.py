@@ -211,10 +211,14 @@ def score_to_probability(score):
 # FILTRO
 # =============================
 def is_valid_bet(score, home, away):
-    if 45 <= score <= 55:
+    # Remove apenas jogos totalmente equilibrados extremos
+    if 48 <= score <= 52:
         return False
-    if home["consistency"] < 0.3 or away["consistency"] < 0.3:
+
+    # filtro mais flexível de consistência
+    if home["consistency"] < 0.15 or away["consistency"] < 0.15:
         return False
+
     return True
 
 # =============================
