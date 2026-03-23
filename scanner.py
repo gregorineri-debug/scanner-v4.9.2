@@ -25,12 +25,14 @@ st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
 # BUSCAR JOGOS
 # =============================
 @st.cache_data(ttl=600)
+@st.cache_data(ttl=600)
 def get_matches(data_alvo):
     try:
         url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
         data = requests.get(url, headers=HEADERS).json()
 
         matches = []
+
         for event in data.get("events", []):
             try:
                 matches.append({
@@ -38,8 +40,7 @@ def get_matches(data_alvo):
                     "away_id": event["awayTeam"]["id"],
                     "home": event["homeTeam"]["name"],
                     "away": event["awayTeam"]["name"],
-                    "tournament": event["tournament"]["name"],
-                    "country": event["tournament"]["category"]["name"]
+                    "tournament": event["tournament"]["name"]
                 })
             except:
                 continue
