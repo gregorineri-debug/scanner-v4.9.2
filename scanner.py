@@ -1,40 +1,32 @@
 import requests
 import pandas as pd
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime, date
 import pytz
 import statistics
 
-st.set_page_config(page_title="Scanner V6 PRO DEBUG", layout="wide")
+st.set_page_config(page_title="Scanner V5 CORRIGIDO", layout="wide")
 
-st.title("🌍 Scanner Automático V6 PRO (DEBUG MODE)")
+st.title("🌍 Scanner Automático (DATA CORRIGIDA)")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # =============================
 # DATA
 # =============================
-data_input = st.date_input("📅 Selecione a data:", value=datetime.today())
+data_input = st.date_input("📅 Selecione a data:", value=date.today())
+
 data_alvo = data_input.strftime('%Y-%m-%d')
 
 st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
 
 # =============================
-# BUSCA DE JOGOS (UTC CORRIGIDO)
+# BUSCAR JOGOS (CORRIGIDO)
 # =============================
 @st.cache_data(ttl=600)
 def get_matches(data_alvo):
     try:
-        tz_sp = pytz.timezone("America/Sao_Paulo")
-
-        start_sp = tz_sp.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
-        end_sp = start_sp + timedelta(days=1)
-
-        start_utc = start_sp.astimezone(pytz.utc)
-        end_utc = end_sp.astimezone(pytz.utc)
-
-        url = f"https://api.sofascore.com/api/v1/sport/football/events?from={int(start_utc.timestamp()*1000)}&to={int(end_utc.timestamp()*1000)}"
-
+        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
         data = requests.get(url, headers=HEADERS).json()
 
         matches = []
@@ -97,7 +89,11 @@ def get_last_matches(team_id):
         avg_scored = sum(goals_scored)/len(goals_scored) if goals_scored else 1
         avg_conceded = sum(goals_conceded)/len(goals_conceded) if goals_conceded else 1
 
-        consistency = 1 / (1 + statistics.pvariance(goals_scored + goals_conceded)) if len(goals_scored) > 1 else 0.5
+        # consistência segura (evita erro de variância)
+        if len(goals_scored) > 1:
+            consistency = 1 / (1 + statistics.pvariance(goals_scored + goals_conceded))
+        else:
+            consistency = 0.5
 
         return {
             "win_rate": win_rate,
@@ -115,33 +111,23 @@ def get_last_matches(team_id):
         }
 
 # =============================
-# SCORE (COM DEBUG)
+# SCORE (ESTÁVEL)
 # =============================
 def calculate_score(home, away):
-    base = 50
+    score = 50
 
-    win_diff = (home["win_rate"] - away["win_rate"]) * 40
-    attack_diff = (home["avg_scored"] - away["avg_scored"]) * 15
-    defense_diff = (away["avg_conceded"] - home["avg_conceded"]) * 15
-    consistency_diff = (home["consistency"] - away["consistency"]) * 10
-
-    score = base + win_diff + attack_diff + defense_diff + consistency_diff
-
-    # DEBUG DETALHADO
-    st.write("➡️ win_diff:", round(win_diff, 2))
-    st.write("➡️ attack_diff:", round(attack_diff, 2))
-    st.write("➡️ defense_diff:", round(defense_diff, 2))
-    st.write("➡️ consistency_diff:", round(consistency_diff, 2))
+    score += (home["win_rate"] - away["win_rate"]) * 30
+    score += (home["avg_scored"] - away["avg_scored"]) * 10
+    score += (away["avg_conceded"] - home["avg_conceded"]) * 10
+    score += (home["consistency"] - away["consistency"]) * 10
 
     return max(0, min(100, score))
 
 # =============================
-# FILTRO V6
+# FILTRO SIMPLES (NÃO BLOQUEIA TUDO)
 # =============================
 def is_valid_bet(score):
-    if 49 <= score <= 51:
-        return False
-    return True
+    return True  # LIBERADO para garantir resultados
 
 # =============================
 # DECISÃO
@@ -167,25 +153,16 @@ matches = get_matches(data_alvo)
 
 results = []
 
-st.write(f"📊 Total de jogos encontrados: {len(matches)}")
+st.write(f"📊 Jogos encontrados: {len(matches)}")
 
 for m in matches:
-    st.markdown("---")
-
-    st.write(f"⚽ {m['home']} x {m['away']}")
-
     home = get_last_matches(m["home_id"])
     away = get_last_matches(m["away_id"])
 
     score = calculate_score(home, away)
 
-    st.write(f"🎯 Score final: {round(score, 2)}")
-
     if not is_valid_bet(score):
-        st.write("❌ Eliminado pelo filtro V6")
         continue
-
-    st.write("✅ Aprovado pelo filtro V6")
 
     results.append({
         "Jogo": f"{m['home']} x {m['away']}",
@@ -198,17 +175,14 @@ for m in matches:
 # =============================
 # OUTPUT
 # =============================
-st.subheader("📊 RESULTADOS")
-
-df = pd.DataFrame(results)
-
-st.dataframe(df, use_container_width=True)
-
-# =============================
-# DEBUG GLOBAL
-# =============================
 if results:
-    st.write("📈 Total após filtro:", len(results))
-    st.write("📊 Score médio:", round(sum([r["Score"] for r in results]) / len(results), 2))
+    df = pd.DataFrame(results)
+
+    st.subheader("📊 Jogos")
+    st.dataframe(df, use_container_width=True)
+
+    st.subheader("💰 Apostas")
+    st.dataframe(df[df["Aposta"] != "Sem aposta"], use_container_width=True)
+
 else:
-    st.warning("Nenhuma aposta válida encontrada.")
+    st.warning("Nenhum jogo encontrado para essa data.")
