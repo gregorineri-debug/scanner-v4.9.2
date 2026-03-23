@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 import pytz
 import statistics
 
-st.set_page_config(page_title="Scanner V6 PRO", layout="wide")
+st.set_page_config(page_title="Scanner V6 PRO DEBUG", layout="wide")
 
-st.title("🌍 Scanner Automático V6 PRO (MODO PROFISSIONAL)")
+st.title("🌍 Scanner Automático V6 PRO (DEBUG MODE)")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -15,13 +15,12 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 # DATA
 # =============================
 data_input = st.date_input("📅 Selecione a data:", value=datetime.today())
-
 data_alvo = data_input.strftime('%Y-%m-%d')
 
 st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
 
 # =============================
-# BUSCA DE JOGOS (CORRIGIDO UTC)
+# BUSCA DE JOGOS (UTC CORRIGIDO)
 # =============================
 @st.cache_data(ttl=600)
 def get_matches(data_alvo):
@@ -116,26 +115,32 @@ def get_last_matches(team_id):
         }
 
 # =============================
-# SCORE (REFINADO)
+# SCORE (COM DEBUG)
 # =============================
 def calculate_score(home, away):
-    score = 50
+    base = 50
 
-    score += (home["win_rate"] - away["win_rate"]) * 40
-    score += (home["avg_scored"] - away["avg_scored"]) * 15
-    score += (away["avg_conceded"] - home["avg_conceded"]) * 15
-    score += (home["consistency"] - away["consistency"]) * 10
+    win_diff = (home["win_rate"] - away["win_rate"]) * 40
+    attack_diff = (home["avg_scored"] - away["avg_scored"]) * 15
+    defense_diff = (away["avg_conceded"] - home["avg_conceded"]) * 15
+    consistency_diff = (home["consistency"] - away["consistency"]) * 10
+
+    score = base + win_diff + attack_diff + defense_diff + consistency_diff
+
+    # DEBUG DETALHADO
+    st.write("➡️ win_diff:", round(win_diff, 2))
+    st.write("➡️ attack_diff:", round(attack_diff, 2))
+    st.write("➡️ defense_diff:", round(defense_diff, 2))
+    st.write("➡️ consistency_diff:", round(consistency_diff, 2))
 
     return max(0, min(100, score))
 
 # =============================
-# FILTRO V6 (INTELIGENTE)
+# FILTRO V6
 # =============================
 def is_valid_bet(score):
-    # elimina apenas jogos MUITO equilibrados
     if 49 <= score <= 51:
         return False
-
     return True
 
 # =============================
@@ -165,13 +170,22 @@ results = []
 st.write(f"📊 Total de jogos encontrados: {len(matches)}")
 
 for m in matches:
+    st.markdown("---")
+
+    st.write(f"⚽ {m['home']} x {m['away']}")
+
     home = get_last_matches(m["home_id"])
     away = get_last_matches(m["away_id"])
 
     score = calculate_score(home, away)
 
+    st.write(f"🎯 Score final: {round(score, 2)}")
+
     if not is_valid_bet(score):
+        st.write("❌ Eliminado pelo filtro V6")
         continue
+
+    st.write("✅ Aprovado pelo filtro V6")
 
     results.append({
         "Jogo": f"{m['home']} x {m['away']}",
@@ -184,19 +198,17 @@ for m in matches:
 # =============================
 # OUTPUT
 # =============================
-st.subheader("📊 Jogos Encontrados")
-st.dataframe(pd.DataFrame(results), use_container_width=True)
+st.subheader("📊 RESULTADOS")
 
+df = pd.DataFrame(results)
+
+st.dataframe(df, use_container_width=True)
+
+# =============================
+# DEBUG GLOBAL
+# =============================
 if results:
-    st.subheader("💰 Apostas Sugeridas")
-    df = pd.DataFrame(results)
-
-    st.dataframe(
-        df[df["Aposta"] != "Sem aposta"],
-        use_container_width=True
-    )
+    st.write("📈 Total após filtro:", len(results))
+    st.write("📊 Score médio:", round(sum([r["Score"] for r in results]) / len(results), 2))
 else:
-    st.warning("Nenhuma aposta válida encontrada (filtro V6).")
-    if results:
-    st.write("📊 Total de jogos após filtro:", len(results))
-    st.write("📈 Score médio:", round(sum([r["Score"] for r in results]) / len(results), 2))
+    st.warning("Nenhuma aposta válida encontrada.")
