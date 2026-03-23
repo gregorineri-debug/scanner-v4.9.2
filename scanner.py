@@ -197,3 +197,6 @@ if results:
     )
 else:
     st.warning("Nenhuma aposta válida encontrada (filtro V6).")
+    if results:
+    st.write("📊 Total de jogos após filtro:", len(results))
+    st.write("📈 Score médio:", round(sum([r["Score"] for r in results]) / len(results), 2))
