@@ -146,7 +146,8 @@ for m in matches:
     score = calculate_score(home, away)
     prob = score_to_probability(score)
     odd = get_real_odds()
-    ev = calculate_ev(prob, odd) prediction = get_prediction(score)
+    ev = calculate_ev(prob, odd)
+    prediction = get_prediction(score)
 
     results.append({
     "Jogo": f"{m['home']} x {m['away']}",
