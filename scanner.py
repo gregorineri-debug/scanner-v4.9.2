@@ -162,7 +162,7 @@ if results:
     df = pd.DataFrame(results)
 
     st.subheader("📊 Todos os Jogos")
-    st.dataframe(df[df["Aposta"] != "Sem aposta"], use_container_width=True)
+    st.dataframe(df[df["Aposta"] != "Sem aposta"]), use_container_width=True)
 
     st.subheader("💰 Apostas com Valor (EV > 0)")
     st.dataframe(df[df["EV"] > 0], use_container_width=True)
