@@ -121,9 +121,9 @@ def get_last_matches(team_id):
 def calculate_score(home, away):
     score = 50
 
-    score += (home["win_rate"] - away["win_rate"]) * 30
-    score += (home["avg_scored"] - away["avg_scored"]) * 10
-    score += (away["avg_conceded"] - home["avg_conceded"]) * 10
+    score += (home["win_rate"] - away["win_rate"]) * 40
+    score += (home["avg_scored"] - away["avg_scored"]) * 15
+    score += (away["avg_conceded"] - home["avg_conceded"]) * 15
     score += (home["consistency"] - away["consistency"]) * 10
 
     return max(0, min(100, score))
