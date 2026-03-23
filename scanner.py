@@ -34,10 +34,10 @@ def get_matches(data_alvo):
         start_day = tz.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
         end_day = start_day + timedelta(days=1)
 
-        start_ts = int(start_day.timestamp() * 1000)
-        end_ts = int(end_day.timestamp() * 1000)
+        start_ts = int(start_day.timestamp())
+        end_ts = int(end_day.timestamp())
 
-        url = f"https://api.sofascore.com/api/v1/sport/football/events?from={start_ts}&to={end_ts}"
+        url = f"https://api.sofascore.com/api/v1/sport/football/events?from={start_ts * 1000}&to={end_ts * 1000}"
 
         data = requests.get(url, headers=HEADERS).json()
 
@@ -45,7 +45,7 @@ def get_matches(data_alvo):
 
         for event in data.get("events", []):
             try:
-                event_ts = event.get("startTimestamp", 0) * 1000
+                event_ts = event.get("startTimestamp", 0)  # 👈 SEM MULTIPLICAR
 
                 if start_ts <= event_ts <= end_ts:
                     matches.append({
