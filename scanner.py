@@ -14,7 +14,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 @st.cache_data(ttl=600)
 def get_matches():
     try:
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(pytz.timezone("America/Sao_Paulo")).strftime("%Y-%m-%d")
         url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{today}"
 
         data = requests.get(url, headers=HEADERS).json()
