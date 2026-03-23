@@ -5,12 +5,15 @@ from datetime import datetime
 import pytz
 import statistics
 
-st.set_page_config(page_title="Scanner V4.9 PRO", layout="wide")
+st.set_page_config(page_title="Scanner V5 PRO", layout="wide")
 
-st.title("🌍 Scanner Automático V4.9 PRO (MODO LUCRO)")
+st.title("🌍 Scanner Automático V5 PRO (MODO DECISÃO)")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+# =============================
+# BUSCAR JOGOS DO DIA (CORRIGIDO)
+# =============================
 @st.cache_data(ttl=600)
 def get_matches():
     try:
@@ -31,7 +34,6 @@ def get_matches():
         for event in data.get("events", []):
             event_ts = event.get("startTimestamp", 0)
 
-            # 🔥 FILTRO REAL DO DIA
             if start_ts <= event_ts <= end_ts:
                 matches.append({
                     "home_id": event["homeTeam"]["id"],
@@ -47,6 +49,9 @@ def get_matches():
     except:
         return []
 
+# =============================
+# DADOS DOS TIMES
+# =============================
 @st.cache_data(ttl=600)
 def get_last_matches(team_id):
     url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/10"
@@ -109,6 +114,9 @@ def get_last_matches(team_id):
             "consistency": 0.5
         }
 
+# =============================
+# SCORE
+# =============================
 def calculate_score(home, away):
     forma = home["win_rate"] - away["win_rate"]
     ataque = home["avg_scored"] - away["avg_scored"]
@@ -123,7 +131,9 @@ def calculate_score(home, away):
 def score_to_probability(score):
     return round(score / 100, 2)
 
-
+# =============================
+# DECISÃO
+# =============================
 def get_prediction(score):
     if score >= 60:
         return "Casa vence"
@@ -131,10 +141,18 @@ def get_prediction(score):
         return "Visitante vence"
     else:
         return "Sem aposta"
-#⚠️ TROCAR AQUI DEPOIS POR API REAL
-def get_real_odds():
-    return 1.80
 
+def get_strength(score):
+    if score >= 75 or score <= 25:
+        return "🔥 Forte"
+    elif score >= 65 or score <= 35:
+        return "✅ Boa"
+    else:
+        return "⚠️ Arriscada"
+
+# =============================
+# PROCESSAMENTO
+# =============================
 matches = get_matches()
 results = []
 
@@ -144,28 +162,32 @@ for m in matches:
 
     score = calculate_score(home, away)
     prob = score_to_probability(score)
-    odd = None
-    ev = None
     prediction = get_prediction(score)
+    strength = get_strength(score)
 
     results.append({
-    "Jogo": f"{m['home']} x {m['away']}",
-    "Liga": m["tournament"],
-    "Score": round(score, 1),
-    "Prob": prob,
-    
-    
-    "Aposta": prediction
-})
+        "Jogo": f"{m['home']} x {m['away']}",
+        "Liga": m["tournament"],
+        "Score": round(score, 1),
+        "Probabilidade": prob,
+        "Aposta": prediction,
+        "Força": strength
+    })
 
+# =============================
+# OUTPUT
+# =============================
 if results:
     df = pd.DataFrame(results)
 
     st.subheader("📊 Todos os Jogos")
-    st.dataframe(df[df["Aposta"] != "Sem aposta"]), use_container_width=True)
+    st.dataframe(df, use_container_width=True)
 
-    st.subheader("💰 Apostas com Valor (EV > 0)")
-    st.dataframe(df[df["EV"] > 0], use_container_width=True)
+    st.subheader("💰 Apostas Recomendadas")
+    st.dataframe(
+        df[(df["Aposta"] != "Sem aposta") & (df["Força"] != "⚠️ Arriscada")],
+        use_container_width=True
+    )
 
 else:
     st.warning("Nenhum jogo encontrado.")
