@@ -12,22 +12,29 @@ st.title("🌍 Scanner Automático V4.9 PRO (MODO LUCRO)")
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 @st.cache_data(ttl=600)
+@st.cache_data(ttl=600)
 def get_matches():
-    url = "https://api.sofascore.com/api/v1/sport/football/scheduled-events/" + datetime.now(pytz.timezone("America/Sao_Paulo")).strftime("%Y-%m-%d")
-    data = requests.get(url, headers=HEADERS).json()
-    matches = []
+    try:
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{today}"
 
-    for event in data.get("events", []):
-        matches.append({
-            "home_id": event["homeTeam"]["id"],
-            "away_id": event["awayTeam"]["id"],
-            "home": event["homeTeam"]["name"],
-            "away": event["awayTeam"]["name"],
-            "tournament": event["tournament"]["name"],
-            "country": event["tournament"]["category"]["name"]
-        })
+        data = requests.get(url, headers=HEADERS).json()
+        matches = []
 
-    return matches
+        for event in data.get("events", []):
+            matches.append({
+                "home_id": event["homeTeam"]["id"],
+                "away_id": event["awayTeam"]["id"],
+                "home": event["homeTeam"]["name"],
+                "away": event["awayTeam"]["name"],
+                "tournament": event["tournament"]["name"],
+                "country": event["tournament"]["category"]["name"]
+            })
+
+        return matches
+
+    except:
+        return []
 
 @st.cache_data(ttl=600)
 def get_last_matches(team_id):
