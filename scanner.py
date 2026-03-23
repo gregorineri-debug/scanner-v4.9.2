@@ -1,26 +1,35 @@
 import requests
 import pandas as pd
 import streamlit as st
-from datetime import datetime, date
+from datetime import datetime, timedelta
 import pytz
-import statistics
 
 st.set_page_config(page_title="Scanner V5 PRO+", layout="wide")
 
-st.title("🌍 Scanner V5 PRO+ (Modelo Completo)")
+st.title("🌍 Scanner V5 PRO+ (DATA CORRIGIDA)")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # =============================
-# DATA
+# DATA CORRIGIDA (UTC)
 # =============================
-data_input = st.date_input("📅 Selecione a data:", value=date.today())
-data_alvo = data_input.strftime('%Y-%m-%d')
+data_input = st.date_input("📅 Selecione a data:")
+
+# Converter para UTC corretamente
+tz_local = pytz.timezone("America/Sao_Paulo")
+
+start_local = tz_local.localize(datetime.combine(data_input, datetime.min.time()))
+end_local = start_local + timedelta(days=1)
+
+start_utc = start_local.astimezone(pytz.utc)
+end_utc = end_local.astimezone(pytz.utc)
+
+start_ts = int(start_utc.timestamp() * 1000)
+end_ts = int(end_utc.timestamp() * 1000)
 
 # =============================
-# CACHE
+# SAFE REQUEST
 # =============================
-@st.cache_data(ttl=600)
 def safe_get(url):
     try:
         return requests.get(url, headers=HEADERS, timeout=10).json()
@@ -28,15 +37,12 @@ def safe_get(url):
         return {}
 
 # =============================
-# JOGOS
+# BUSCAR JOGOS (CORRIGIDO)
 # =============================
 @st.cache_data(ttl=600)
-def get_matches(data_alvo):
+def get_matches(start_ts, end_ts):
 
-    tz = pytz.timezone("America/Sao_Paulo")
-    start = tz.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
-
-    url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
+    url = f"https://api.sofascore.com/api/v1/sport/football/events?from={start_ts}&to={end_ts}"
     data = safe_get(url)
 
     matches = []
@@ -48,8 +54,7 @@ def get_matches(data_alvo):
                 "away_id": e["awayTeam"]["id"],
                 "home": e["homeTeam"]["name"],
                 "away": e["awayTeam"]["name"],
-                "league": e["tournament"]["name"],
-                "league_level": e["tournament"].get("category", {}).get("name", "unknown")
+                "league": e["tournament"]["name"]
             })
         except:
             continue
@@ -57,17 +62,10 @@ def get_matches(data_alvo):
     return matches
 
 # =============================
-# POSIÇÃO NA TABELA (simulado)
+# POSIÇÃO (fallback)
 # =============================
 def get_position(team_id):
-    try:
-        url = f"https://api.sofascore.com/api/v1/team/{team_id}/rankings"
-        data = safe_get(url)
-
-        # fallback (pois nem sempre disponível)
-        return 5
-    except:
-        return 10
+    return 8
 
 # =============================
 # ELO
@@ -86,6 +84,7 @@ def get_elo(position):
 # =============================
 @st.cache_data(ttl=600)
 def get_last_matches(team_id):
+
     url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/10"
     data = safe_get(url)
 
@@ -129,32 +128,28 @@ def get_h2h(home_id, away_id):
 
         events = data.get("events", [])[:5]
 
-        home_wins = 0
+        wins = 0
 
         for e in events:
             try:
-                hs = e["homeScore"]["current"]
-                as_ = e["awayScore"]["current"]
-
-                if hs > as_:
-                    home_wins += 1
+                if e["homeScore"]["current"] > e["awayScore"]["current"]:
+                    wins += 1
             except:
                 continue
 
-        return home_wins / max(1, len(events))
+        return wins / max(1, len(events))
 
     except:
         return 0.5
 
 # =============================
-# DESFALQUES (estimado)
+# DESFALQUES
 # =============================
 def get_injuries(team_id):
-    # Sofascore não expõe facilmente, usamos proxy
     return 0.1
 
 # =============================
-# SCORE COMPLETO
+# SCORE
 # =============================
 def calculate_score(home, away, h2h):
 
@@ -172,13 +167,8 @@ def calculate_score(home, away, h2h):
 # FILTRO
 # =============================
 def is_valid(score):
-    if 45 <= score <= 55:
-        return False
-    return True
+    return not (45 <= score <= 55)
 
-# =============================
-# PREDIÇÃO
-# =============================
 def get_prediction(score):
     if score >= 60:
         return "Casa"
@@ -189,7 +179,7 @@ def get_prediction(score):
 # =============================
 # EXECUÇÃO
 # =============================
-matches = get_matches(data_alvo)
+matches = get_matches(start_ts, end_ts)
 
 results = []
 
@@ -233,10 +223,7 @@ if results:
 
     st.subheader("💰 Melhores Picks")
 
-    st.dataframe(
-        df[df["Pick"] != "Sem aposta"],
-        use_container_width=True
-    )
+    st.dataframe(df[df["Pick"] != "Sem aposta"], use_container_width=True)
 
 else:
-    st.warning("Nenhum jogo encontrado com critérios válidos.")
+    st.warning("Nenhum jogo encontrado — verifique data ou API.")
