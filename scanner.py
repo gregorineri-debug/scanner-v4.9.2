@@ -132,8 +132,10 @@ def calculate_score(home, away):
 # FILTRO V6 (INTELIGENTE)
 # =============================
 def is_valid_bet(score):
-    if 48 <= score <= 52:
+    # elimina apenas jogos MUITO equilibrados
+    if 49 <= score <= 51:
         return False
+
     return True
 
 # =============================
