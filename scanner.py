@@ -1,193 +1,132 @@
-import requests
-import pandas as pd
+# Arquivo: app.py (Versão Final de Produção)
+
 import streamlit as st
-from datetime import datetime, date
-import pytz
-import statistics
+import pandas as pd
+import joblib
+import numpy as np
 
-st.set_page_config(page_title="Scanner V8 PRO", layout="wide")
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Previsor de Partidas", page_icon="⚽", layout="wide")
 
-st.title("🚀 Scanner V8 PRO (VALOR ESPERADO)")
+# --- FUNÇÕES DE LÓGICA DO MODELO ---
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
-
-# =============================
-# DATA
-# =============================
-data_input = st.date_input("📅 Data:", value=date.today())
-data_alvo = data_input.strftime('%Y-%m-%d')
-
-st.write(f"🔎 Data analisada: **{data_alvo}**")
-
-# =============================
-# ODDS (INPUT MANUAL)
-# =============================
-st.sidebar.title("🎯 Odds do mercado")
-
-def get_odds(key):
-    return st.sidebar.number_input(f"Odd {key}", value=2.0, step=0.01)
-
-# =============================
-# JOGOS
-# =============================
-@st.cache_data(ttl=600)
-def get_matches(data_alvo):
+@st.cache_data
+def carregar_ativos():
+    """ Carrega todos os ativos necessários para a aplicação. """
     try:
-        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
-        data = requests.get(url, headers=HEADERS).json()
+        model = joblib.load('modelo_previsor.pkl')
+        model_columns = joblib.load('colunas_previsor.pkl')
+        label_encoder = joblib.load('encoder_previsor.pkl')
+        # Carrega o dataset final e mais atualizado
+        df_historico = pd.read_csv('dados_final_com_oitavas.csv', parse_dates=['Date'])
+        
+        times_casa = df_historico['HomeTeam'].unique()
+        times_fora = df_historico['AwayTeam'].unique()
+        lista_times = sorted(list(set(np.concatenate((times_casa, times_fora)))))
+        return model, model_columns, label_encoder, df_historico, lista_times
+    except FileNotFoundError:
+        return None, None, None, None, None
 
-        matches = []
+def calcular_stats_recentes(time, data_partida, df_historico):
+    """ Calcula as stats de forma recente (10 jogos) para um único time. """
+    df_time = df_historico[((df_historico['HomeTeam'] == time) | (df_historico['AwayTeam'] == time)) & (df_historico['Date'] < data_partida)]
+    if len(df_time) == 0: return 0, 0, 0
+    df_time = df_time.tail(10) 
 
-        for event in data.get("events", []):
-            try:
-                matches.append({
-                    "home_id": event["homeTeam"]["id"],
-                    "away_id": event["awayTeam"]["id"],
-                    "home": event["homeTeam"]["name"],
-                    "away": event["awayTeam"]["name"],
-                    "tournament": event["tournament"]["name"]
-                })
-            except:
-                continue
+    gols_feitos, gols_sofridos, pontos = [], [], []
+    for _, row in df_time.iterrows():
+        if row['HomeTeam'] == time:
+            gols_feitos.append(row['FTHG']); gols_sofridos.append(row['FTAG'])
+            pontos.append(3 if row['FTR'] == 'H' else (1 if row['FTR'] == 'D' else 0))
+        else:
+            gols_feitos.append(row['FTAG']); gols_sofridos.append(row['FTHG'])
+            pontos.append(3 if row['FTR'] == 'A' else (1 if row['FTR'] == 'D' else 0))
+    
+    media_gf = np.mean(gols_feitos) if gols_feitos else 0
+    media_gs = np.mean(gols_sofridos) if gols_sofridos else 0
+    media_pontos = np.mean(pontos) if pontos else 0
+    return media_gf, media_gs, media_pontos
 
-        return matches
+# --- CARREGAMENTO INICIAL E INTERFACE ---
+model, model_columns, le, df_historico, lista_times = carregar_ativos()
 
-    except:
-        return []
+if model is None:
+    st.error("ERRO CRÍTICO: Arquivos de modelo (.pkl) ou de dados (.csv) não encontrados. Execute o script 'treinar_modelo_final.py' primeiro.")
+    st.stop()
 
-# =============================
-# DADOS TIMES
-# =============================
-@st.cache_data(ttl=600)
-def get_last_matches(team_id):
-    try:
-        url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/10"
-        data = requests.get(url, headers=HEADERS).json()
+st.title('🥇 Previsor de Partidas - Copa do Mundo de Clubes de Futebol')
+st.markdown("### Previsões para o  Copa do Mundo de Clubes 2025 - Atualizado em 02/07/2025")
 
-        events = data.get("events", [])
+col1, col2 = st.columns(2)
+with col1:
+    time_A = st.selectbox('Selecione o Time A', lista_times, index=lista_times.index('Real Madrid') if 'Real Madrid' in lista_times else 0)
+with col2:
+    time_B = st.selectbox('Selecione o Time B', lista_times, index=lista_times.index('Manchester City') if 'Manchester City' in lista_times else 1)
 
-        wins = 0
-        total = 0
+if st.button('Fazer Previsão', type="primary", use_container_width=True):
+    if time_A == time_B:
+        st.error("Os times A e B devem ser diferentes.")
+    else:
+        with st.spinner('Calculando estatísticas e fazendo a previsão...'):
+            data_hoje = pd.to_datetime('today').normalize()
+            gf_A, gs_A, forma_A = calcular_stats_recentes(time_A, data_hoje, df_historico)
+            gf_B, gs_B, forma_B = calcular_stats_recentes(time_B, data_hoje, df_historico)
+            
+            st.markdown("---")
+            st.subheader("Estatísticas Recentes (Últimos 10 Jogos)")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"**{time_A}**")
+                st.metric(label="Média de Pontos", value=f"{forma_A:.2f}")
+                st.metric(label="Média de Gols Feitos", value=f"{gf_A:.2f}")
+                st.metric(label="Média de Gols Sofridos", value=f"{gs_A:.2f}")
+            with c2:
+                st.markdown(f"**{time_B}**")
+                st.metric(label="Média de Pontos", value=f"{forma_B:.2f}")
+                st.metric(label="Média de Gols Feitos", value=f"{gf_B:.2f}")
+                st.metric(label="Média de Gols Sofridos", value=f"{gs_B:.2f}")
 
-        goals_scored = []
-        goals_conceded = []
+            def preparar_input(home, away, forma_H, gf_H, gs_H, forma_A, gf_A, gs_A):
+                data = {'Home_Forma_10_Jogos': forma_H, 'Home_Media_Gols_Feitos_10J': gf_H, 'Home_Media_Gols_Sofridos_10J': gs_H, 'Away_Forma_10_Jogos': forma_A, 'Away_Media_Gols_Feitos_10J': gf_A, 'Away_Media_Gols_Sofridos_10J': gs_A}
+                input_df = pd.DataFrame([data])
+                for col in model_columns:
+                    if col not in input_df.columns: input_df[col] = False
+                
+                home_col = 'HomeTeam_' + home
+                away_col = 'AwayTeam_' + away
+                if home_col in input_df.columns: input_df[home_col] = True
+                if away_col in input_df.columns: input_df[away_col] = True
+                
+                return input_df.reindex(columns=model_columns, fill_value=False)
 
-        for i, e in enumerate(events):
-            weight = 1 - (i * 0.05)
+            input1 = preparar_input(time_A, time_B, forma_A, gf_A, gs_A, forma_B, gf_B, gs_B)
+            prob_1 = model.predict_proba(input1)
+            input2 = preparar_input(time_B, time_A, forma_B, gf_B, gs_B, forma_A, gf_A, gs_A)
+            prob_2 = model.predict_proba(input2)
 
-            hs = e["homeScore"]["current"]
-            as_ = e["awayScore"]["current"]
-
-            if e["homeTeam"]["id"] == team_id:
-                goals_scored.append(hs)
-                goals_conceded.append(as_)
-                if hs > as_:
-                    wins += weight
+            map_classes = {classe: i for i, classe in enumerate(le.classes_)}
+            prob_A_vence = np.mean([prob_1[0][map_classes['H']], prob_2[0][map_classes['A']]])
+            prob_B_vence = np.mean([prob_1[0][map_classes['A']], prob_2[0][map_classes['H']]])
+            prob_empate = np.mean([prob_1[0][map_classes['D']], prob_2[0][map_classes['D']]])
+            
+            soma_probs = prob_A_vence + prob_B_vence + prob_empate
+            prob_A_vence /= soma_probs
+            prob_B_vence /= soma_probs
+            prob_empate /= soma_probs
+            
+            st.markdown("---")
+            st.subheader(f'Previsão para: {time_A} vs {time_B}')
+            
+            if prob_A_vence > prob_B_vence and prob_A_vence > prob_empate:
+                st.success(f"🏆 Resultado Mais Provável: Vitória do {time_A}!")
+            elif prob_B_vence > prob_A_vence and prob_B_vence > prob_empate:
+                st.success(f"🏆 Resultado Mais Provável: Vitória do {time_B}!")
             else:
-                goals_scored.append(as_)
-                goals_conceded.append(hs)
-                if as_ > hs:
-                    wins += weight
+                st.warning(f"⚖️ Resultado Mais Provável: Empate!")
 
-            total += weight
-
-        win_rate = wins / total if total > 0 else 0.5
-
-        avg_scored = sum(goals_scored)/len(goals_scored) if goals_scored else 1
-        avg_conceded = sum(goals_conceded)/len(goals_conceded) if goals_conceded else 1
-
-        consistency = 1 / (1 + statistics.pvariance(goals_scored + goals_conceded)) if len(goals_scored) > 1 else 0.5
-
-        return {
-            "win_rate": win_rate,
-            "avg_scored": avg_scored,
-            "avg_conceded": avg_conceded,
-            "consistency": consistency
-        }
-
-    except:
-        return {
-            "win_rate": 0.5,
-            "avg_scored": 1,
-            "avg_conceded": 1,
-            "consistency": 0.5
-        }
-
-# =============================
-# SCORE
-# =============================
-def calculate_score(home, away):
-    score = 50
-
-    score += (home["win_rate"] - away["win_rate"]) * 35
-    score += (home["avg_scored"] - away["avg_scored"]) * 10
-    score += (away["avg_conceded"] - home["avg_conceded"]) * 10
-    score += (home["consistency"] - away["consistency"]) * 10
-
-    return max(0, min(100, score))
-
-# =============================
-# PROBABILIDADE
-# =============================
-def score_to_prob(score):
-    return score / 100
-
-# Odd justa
-def fair_odds(prob):
-    return 1 / prob if prob > 0 else 0
-
-# EV (Valor Esperado)
-def expected_value(prob, odd):
-    return (prob * odd) - 1
-
-# =============================
-# DECISÃO
-# =============================
-def decision(ev):
-    if ev > 0.05:
-        return "🔥 Valor"
-    elif ev > 0:
-        return "✅ Margem"
-    return "❌ Ruim"
-
-# =============================
-# EXECUÇÃO
-# =============================
-matches = get_matches(data_alvo)
-
-results = []
-
-st.write(f"📊 Jogos encontrados: {len(matches)}")
-
-for i, m in enumerate(matches):
-    home = get_last_matches(m["home_id"])
-    away = get_last_matches(m["away_id"])
-
-    score = calculate_score(home, away)
-    prob = score_to_prob(score)
-    odd_justa = fair_odds(prob)
-
-    # odds input (exemplo simples por jogo)
-    odd = st.sidebar.number_input(f"{m['home']} x {m['away']}", value=2.0 + (i*0.1))
-
-    ev = expected_value(prob, odd)
-
-    results.append({
-        "Jogo": f"{m['home']} x {m['away']}",
-        "Prob (%)": round(prob*100, 2),
-        "Odd Justa": round(odd_justa, 2),
-        "Odd Mercado": round(odd, 2),
-        "EV": round(ev, 3),
-        "Status": decision(ev)
-    })
-
-# =============================
-# OUTPUT
-# =============================
-df = pd.DataFrame(results)
-
-st.subheader("📊 Análise Completa")
-st.dataframe(df, use_container_width=True)
-
-st.subheader("💰 Apenas Valor")
-st.dataframe(df[df["Status"] == "🔥 Valor"], use_container_width=True)
+            st.write("---")
+            st.subheader('Probabilidades da Partida')
+            c1, c2, c3 = st.columns(3)
+            c1.metric(label=f"Vitória {time_A}", value=f"{prob_A_vence:.2%}")
+            c2.metric(label="Empate", value=f"{prob_empate:.2%}")
+            c3.metric(label=f"Vitória {time_B}", value=f"{prob_B_vence:.2%}")
