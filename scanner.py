@@ -27,20 +27,12 @@ st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
 @st.cache_data(ttl=600)
 def get_matches(data_alvo):
     try:
-        tz = pytz.timezone("America/Sao_Paulo")
-        start_day = tz.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
-        end_day = tz.localize(datetime.strptime(data_alvo + " 23:59:59", "%Y-%m-%d %H:%M:%S"))
-
-        start_ts = int(start_day.timestamp())
-        end_ts = int(end_day.timestamp())
-
         url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
         data = requests.get(url, headers=HEADERS).json()
 
         matches = []
         for event in data.get("events", []):
-            event_ts = event.get("startTimestamp", 0)
-            if start_ts <= event_ts <= end_ts:
+            try:
                 matches.append({
                     "home_id": event["homeTeam"]["id"],
                     "away_id": event["awayTeam"]["id"],
@@ -49,12 +41,16 @@ def get_matches(data_alvo):
                     "tournament": event["tournament"]["name"],
                     "country": event["tournament"]["category"]["name"]
                 })
+            except:
+                continue
+
         return matches
+
     except:
         return []
 
 # =============================
-# DADOS DOS TIMES (REFINADO)
+# DADOS DOS TIMES
 # =============================
 @st.cache_data(ttl=600)
 def get_last_matches(team_id):
@@ -74,24 +70,18 @@ def get_last_matches(team_id):
                 hs = e["homeScore"]["current"] or 0
                 as_ = e["awayScore"]["current"] or 0
 
-                # força do adversário (simplificada)
-                opponent_strength = 1.0
-                if "tournament" in e:
-                    level = e["tournament"].get("priority", 1)
-                    opponent_strength = 0.9 + (level * 0.05)
-
-                total_games += opponent_strength
+                total_games += 1
 
                 if is_home:
                     goals_scored.append(hs)
                     goals_conceded.append(as_)
                     if hs > as_:
-                        wins += opponent_strength
+                        wins += 1
                 else:
                     goals_scored.append(as_)
                     goals_conceded.append(hs)
                     if as_ > hs:
-                        wins += opponent_strength
+                        wins += 1
             except:
                 continue
 
@@ -104,18 +94,16 @@ def get_last_matches(team_id):
                 "form": 0.5
             }
 
-        # métricas
         win_rate = wins / max(1, total_games)
         avg_scored = sum(goals_scored) / len(goals_scored)
         avg_conceded = sum(goals_conceded) / len(goals_conceded)
 
-        # consistência mais estável
         goal_diff = [gs - gc for gs, gc in zip(goals_scored, goals_conceded)]
+
         mean = sum(goal_diff) / len(goal_diff)
         variance = sum((x - mean) ** 2 for x in goal_diff) / len(goal_diff)
         consistency = 1 / (1 + variance)
 
-        # forma recente (últimos 5 jogos)
         recent = goal_diff[:5]
         form = sum(1 if x > 0 else 0 for x in recent) / max(1, len(recent))
 
@@ -126,6 +114,7 @@ def get_last_matches(team_id):
             "consistency": consistency,
             "form": form
         }
+
     except:
         return {
             "win_rate": 0.5,
@@ -136,7 +125,38 @@ def get_last_matches(team_id):
         }
 
 # =============================
-# SCORE REFINADO
+# H2H
+# =============================
+@st.cache_data(ttl=600)
+def get_h2h(home_id, away_id):
+    try:
+        url = f"https://api.sofascore.com/api/v1/team/{home_id}/h2h/{away_id}/events"
+        data = requests.get(url, headers=HEADERS).json()
+
+        events = data.get("events", [])[:5]
+
+        home_wins = 0
+
+        for e in events:
+            try:
+                if e["homeScore"]["current"] > e["awayScore"]["current"]:
+                    home_wins += 1
+            except:
+                continue
+
+        return home_wins / max(1, len(events))
+
+    except:
+        return 0.5
+
+# =============================
+# DESFALQUES
+# =============================
+def get_injuries(team_id):
+    return 0.1
+
+# =============================
+# SCORE (CORRIGIDO)
 # =============================
 def calculate_score(home, away, h2h):
 
@@ -157,10 +177,10 @@ def calculate_score(home, away, h2h):
         h2h_factor * 5
     )
 
-    # normalização correta (sem explodir)
+    # normalização correta
     score = 50 + score
 
-    # limitar suavemente
+    # limitar entre 0 e 100
     if score > 100:
         score = 100
     if score < 0:
@@ -172,7 +192,7 @@ def score_to_probability(score):
     return round(score / 100, 2)
 
 # =============================
-# FILTRO V5
+# FILTRO
 # =============================
 def is_valid_bet(score, home, away):
     if 45 <= score <= 55:
@@ -207,9 +227,19 @@ matches = get_matches(data_alvo)
 results = []
 
 for m in matches:
+
     home = get_last_matches(m["home_id"])
     away = get_last_matches(m["away_id"])
-    score = calculate_score(home, away)
+
+    h2h = get_h2h(m["home_id"], m["away_id"])
+
+    home["injuries"] = get_injuries(m["home_id"])
+    away["injuries"] = get_injuries(m["away_id"])
+
+    score = calculate_score(home, away, h2h)
+
+    # ajuste leve por desfalques
+    score -= (away["injuries"] - home["injuries"]) * 5
 
     if not is_valid_bet(score, home, away):
         continue
@@ -232,6 +262,7 @@ for m in matches:
 # =============================
 if results:
     df = pd.DataFrame(results)
+
     st.subheader("📊 Todos os Jogos (Filtrados)")
     st.dataframe(df, use_container_width=True)
 
