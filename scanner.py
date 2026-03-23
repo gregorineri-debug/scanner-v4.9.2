@@ -32,28 +32,32 @@ def get_matches(data_alvo):
         tz = pytz.timezone("America/Sao_Paulo")
 
         start_day = tz.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
-        end_day = tz.localize(datetime.strptime(data_alvo + " 23:59:59", "%Y-%m-%d %H:%M:%S"))
+        end_day = start_day + timedelta(days=1)
 
-        start_ts = int(start_day.timestamp())
-        end_ts = int(end_day.timestamp())
+        start_ts = int(start_day.timestamp() * 1000)
+        end_ts = int(end_day.timestamp() * 1000)
 
-        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
+        url = f"https://api.sofascore.com/api/v1/sport/football/events?from={start_ts}&to={end_ts}"
+
         data = requests.get(url, headers=HEADERS).json()
 
         matches = []
 
         for event in data.get("events", []):
-            event_ts = event.get("startTimestamp", 0)
+            try:
+                event_ts = event.get("startTimestamp", 0) * 1000
 
-            if start_ts <= event_ts <= end_ts:
-                matches.append({
-                    "home_id": event["homeTeam"]["id"],
-                    "away_id": event["awayTeam"]["id"],
-                    "home": event["homeTeam"]["name"],
-                    "away": event["awayTeam"]["name"],
-                    "tournament": event["tournament"]["name"],
-                    "country": event["tournament"]["category"]["name"]
-                })
+                if start_ts <= event_ts <= end_ts:
+                    matches.append({
+                        "home_id": event["homeTeam"]["id"],
+                        "away_id": event["awayTeam"]["id"],
+                        "home": event["homeTeam"]["name"],
+                        "away": event["awayTeam"]["name"],
+                        "tournament": event["tournament"]["name"],
+                        "country": event["tournament"]["category"]["name"]
+                    })
+            except:
+                continue
 
         return matches
 
