@@ -1,31 +1,25 @@
 import requests
 import pandas as pd
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime, date
 import pytz
 
+# =============================
+# CONFIG
+# =============================
 st.set_page_config(page_title="Scanner V5 PRO+", layout="wide")
+st.title("🌍 Scanner V5 PRO+")
 
-st.title("🌍 Scanner V5 PRO+ (DATA CORRIGIDA)")
-
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
+}
 
 # =============================
-# DATA CORRIGIDA (UTC)
+# DATA
 # =============================
-data_input = st.date_input("📅 Selecione a data:")
-
-# Converter para UTC corretamente
-tz_local = pytz.timezone("America/Sao_Paulo")
-
-start_local = tz_local.localize(datetime.combine(data_input, datetime.min.time()))
-end_local = start_local + timedelta(days=1)
-
-start_utc = start_local.astimezone(pytz.utc)
-end_utc = end_local.astimezone(pytz.utc)
-
-start_ts = int(start_utc.timestamp() * 1000)
-end_ts = int(end_utc.timestamp() * 1000)
+data_input = st.date_input("📅 Selecione a data:", value=date.today())
+data_alvo = data_input.strftime('%Y-%m-%d')
 
 # =============================
 # SAFE REQUEST
@@ -37,12 +31,12 @@ def safe_get(url):
         return {}
 
 # =============================
-# BUSCAR JOGOS (CORRIGIDO)
+# JOGOS (CORRIGIDO)
 # =============================
 @st.cache_data(ttl=600)
-def get_matches(start_ts, end_ts):
+def get_matches(data_alvo):
 
-    url = f"https://api.sofascore.com/api/v1/sport/football/events?from={start_ts}&to={end_ts}"
+    url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
     data = safe_get(url)
 
     matches = []
@@ -65,7 +59,7 @@ def get_matches(start_ts, end_ts):
 # POSIÇÃO (fallback)
 # =============================
 def get_position(team_id):
-    return 8
+    return 8  # fallback estável
 
 # =============================
 # ELO
@@ -122,6 +116,7 @@ def get_last_matches(team_id):
 # H2H
 # =============================
 def get_h2h(home_id, away_id):
+
     try:
         url = f"https://api.sofascore.com/api/v1/team/{home_id}/h2h/{away_id}/events"
         data = safe_get(url)
@@ -143,7 +138,7 @@ def get_h2h(home_id, away_id):
         return 0.5
 
 # =============================
-# DESFALQUES
+# DESFALQUES (fallback)
 # =============================
 def get_injuries(team_id):
     return 0.1
@@ -179,7 +174,7 @@ def get_prediction(score):
 # =============================
 # EXECUÇÃO
 # =============================
-matches = get_matches(start_ts, end_ts)
+matches = get_matches(data_alvo)
 
 results = []
 
@@ -223,7 +218,10 @@ if results:
 
     st.subheader("💰 Melhores Picks")
 
-    st.dataframe(df[df["Pick"] != "Sem aposta"], use_container_width=True)
+    st.dataframe(
+        df[df["Pick"] != "Sem aposta"],
+        use_container_width=True
+    )
 
 else:
-    st.warning("Nenhum jogo encontrado — verifique data ou API.")
+    st.warning("Nenhum jogo encontrado — tente outra data.")
