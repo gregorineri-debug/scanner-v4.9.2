@@ -26,9 +26,24 @@ st.write(f"🔎 Buscando jogos do dia: **{data_alvo}**")
 # =============================
 @st.cache_data(ttl=600)
 @st.cache_data(ttl=600)
+@st.cache_data(ttl=600)
 def get_matches(data_alvo):
     try:
-        url = f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{data_alvo}"
+        tz_sp = pytz.timezone("America/Sao_Paulo")
+
+        # Data selecionada no horário de São Paulo
+        start_sp = tz_sp.localize(datetime.strptime(data_alvo, "%Y-%m-%d"))
+        end_sp = start_sp + timedelta(days=1)
+
+        # Converter para UTC (GMT)
+        start_utc = start_sp.astimezone(pytz.utc)
+        end_utc = end_sp.astimezone(pytz.utc)
+
+        start_ts = int(start_utc.timestamp())
+        end_ts = int(end_utc.timestamp())
+
+        url = f"https://api.sofascore.com/api/v1/sport/football/events?from={start_ts * 1000}&to={end_ts * 1000}"
+
         data = requests.get(url, headers=HEADERS).json()
 
         matches = []
