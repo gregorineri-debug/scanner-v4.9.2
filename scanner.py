@@ -125,7 +125,13 @@ def score_to_probability(score):
 
 def calculate_ev(prob, odd):
     return round((prob * odd) - 1, 3)
-
+def get_prediction(score):
+    if score >= 60:
+        return "Casa vence"
+    elif score <= 40:
+        return "Visitante vence"
+    else:
+        return "Sem aposta"
 #⚠️ TROCAR AQUI DEPOIS POR API REAL
 def get_real_odds():
     return 1.80
@@ -140,22 +146,23 @@ for m in matches:
     score = calculate_score(home, away)
     prob = score_to_probability(score)
     odd = get_real_odds()
-    ev = calculate_ev(prob, odd)
+    ev = calculate_ev(prob, odd) prediction = get_prediction(score)
 
     results.append({
-        "Jogo": f"{m['home']} x {m['away']}",
-        "Liga": m["tournament"],
-        "Score": round(score, 1),
-        "Prob": prob,
-        "Odd": odd,
-        "EV": ev
-    })
+    "Jogo": f"{m['home']} x {m['away']}",
+    "Liga": m["tournament"],
+    "Score": round(score, 1),
+    "Prob": prob,
+    "Odd": odd,
+    "EV": ev,
+    "Aposta": prediction
+})
 
 if results:
     df = pd.DataFrame(results)
 
     st.subheader("📊 Todos os Jogos")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df[(df["EV"] > 0) & (df["Aposta"] != "Sem aposta")], use_container_width=True)
 
     st.subheader("💰 Apostas com Valor (EV > 0)")
     st.dataframe(df[df["EV"] > 0], use_container_width=True)
